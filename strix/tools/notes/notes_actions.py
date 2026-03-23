@@ -12,6 +12,7 @@ _notes_storage: dict[str, dict[str, Any]] = {}
 _VALID_NOTE_CATEGORIES = ["general", "findings", "methodology", "questions", "plan", "wiki"]
 _notes_lock = threading.RLock()
 _loaded_notes_run_dir: str | None = None
+_DEFAULT_CONTENT_PREVIEW_CHARS = 280
 
 
 def _get_run_dir() -> Path | None:
@@ -204,6 +205,38 @@ def _filter_notes(
     return filtered_notes
 
 
+def _to_note_listing_entry(
+    note: dict[str, Any],
+    *,
+    include_content: bool = False,
+) -> dict[str, Any]:
+    entry = {
+        "note_id": note.get("note_id"),
+        "title": note.get("title", ""),
+        "category": note.get("category", "general"),
+        "tags": note.get("tags", []),
+        "created_at": note.get("created_at", ""),
+        "updated_at": note.get("updated_at", ""),
+    }
+
+    wiki_filename = note.get("wiki_filename")
+    if isinstance(wiki_filename, str) and wiki_filename:
+        entry["wiki_filename"] = wiki_filename
+
+    content = str(note.get("content", ""))
+    if include_content:
+        entry["content"] = content
+    elif content:
+        if len(content) > _DEFAULT_CONTENT_PREVIEW_CHARS:
+            entry["content_preview"] = (
+                f"{content[:_DEFAULT_CONTENT_PREVIEW_CHARS].rstrip()}..."
+            )
+        else:
+            entry["content_preview"] = content
+
+    return entry
+
+
 @register_tool(sandbox_execution=False)
 def create_note(  # noqa: PLR0911
     title: str,
@@ -272,15 +305,20 @@ def list_notes(
     category: str | None = None,
     tags: list[str] | None = None,
     search: str | None = None,
+    include_content: bool = False,
 ) -> dict[str, Any]:
     with _notes_lock:
         try:
             filtered_notes = _filter_notes(category=category, tags=tags, search_query=search)
+            notes = [
+                _to_note_listing_entry(note, include_content=include_content)
+                for note in filtered_notes
+            ]
 
             return {
                 "success": True,
-                "notes": filtered_notes,
-                "total_count": len(filtered_notes),
+                "notes": notes,
+                "total_count": len(notes),
             }
 
         except (ValueError, TypeError) as e:
@@ -290,6 +328,40 @@ def list_notes(
                 "notes": [],
                 "total_count": 0,
             }
+
+
+@register_tool(sandbox_execution=False)
+def get_note(note_id: str) -> dict[str, Any]:
+    with _notes_lock:
+        try:
+            _ensure_notes_loaded()
+
+            if not note_id or not note_id.strip():
+                return {
+                    "success": False,
+                    "error": "Note ID cannot be empty",
+                    "note": None,
+                }
+
+            note = _notes_storage.get(note_id)
+            if note is None:
+                return {
+                    "success": False,
+                    "error": f"Note with ID '{note_id}' not found",
+                    "note": None,
+                }
+
+            note_with_id = note.copy()
+            note_with_id["note_id"] = note_id
+
+        except (ValueError, TypeError) as e:
+            return {
+                "success": False,
+                "error": f"Failed to get note: {e}",
+                "note": None,
+            }
+        else:
+            return {"success": True, "note": note_with_id}
 
 
 @register_tool(sandbox_execution=False)

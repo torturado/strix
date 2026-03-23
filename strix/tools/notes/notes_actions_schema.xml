@@ -93,7 +93,7 @@ The /api/internal/* endpoints are high priority as they appear to lack authentic
     </examples>
   </tool>
   <tool name="list_notes">
-    <description>List existing notes with optional filtering and search.</description>
+    <description>List existing notes with optional filtering and search (metadata-first by default).</description>
     <parameters>
       <parameter name="category" type="string" required="false">
         <description>Filter by category</description>
@@ -104,9 +104,12 @@ The /api/internal/* endpoints are high priority as they appear to lack authentic
       <parameter name="search" type="string" required="false">
         <description>Search query to find in note titles and content</description>
       </parameter>
+      <parameter name="include_content" type="boolean" required="false">
+        <description>Include full note content in each list item (default: false)</description>
+      </parameter>
     </parameters>
     <returns type="Dict[str, Any]">
-      <description>Response containing: - notes: List of matching notes - total_count: Total number of notes found</description>
+      <description>Response containing: - notes: List of matching notes (metadata + optional content/content_preview) - total_count: Total number of notes found</description>
     </returns>
     <examples>
   # List all findings
@@ -128,6 +131,23 @@ The /api/internal/* endpoints are high priority as they appear to lack authentic
   # Load shared repository wiki notes
   <function=list_notes>
   <parameter=category>wiki</parameter>
+  </function>
+    </examples>
+  </tool>
+  <tool name="get_note">
+    <description>Get a single note by ID, including full content.</description>
+    <parameters>
+      <parameter name="note_id" type="string" required="true">
+        <description>ID of the note to fetch</description>
+      </parameter>
+    </parameters>
+    <returns type="Dict[str, Any]">
+      <description>Response containing: - note: Note object including content - success: Whether note lookup succeeded</description>
+    </returns>
+    <examples>
+  # Read a specific wiki note after listing note IDs
+  <function=get_note>
+  <parameter=note_id>abc12</parameter>
   </function>
     </examples>
   </tool>

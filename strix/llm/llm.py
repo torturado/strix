@@ -107,6 +107,7 @@ class LLM:
         ordered_skills.append(f"scan_modes/{self.config.scan_mode}")
         if self.config.is_whitebox:
             ordered_skills.append("coordination/source_aware_whitebox")
+            ordered_skills.append("source_aware_sast")
 
         deduped: list[str] = []
         seen: set[str] = set()

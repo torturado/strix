@@ -19,16 +19,42 @@ Before scanning, check shared wiki memory:
 
 ```text
 1) list_notes(category="wiki")
-2) Reuse matching repo wiki note if present
-3) create_note(category="wiki") only if missing
+2) get_note(note_id=...) for the selected repo wiki before analysis
+3) Reuse matching repo wiki note if present
+4) create_note(category="wiki") only if missing
 ```
+
+After every major source-analysis batch, update the same repo wiki note with `update_note` so other agents can reuse your latest map.
+
+## Baseline Coverage Bundle (Recommended)
+
+Run this baseline once per repository before deep narrowing:
+
+```bash
+ART=/workspace/.strix-source-aware
+mkdir -p "$ART"
+
+semgrep scan --config p/default --config p/golang --config p/secrets \
+  --metrics=off --json --output "$ART/semgrep.json" .
+sg scan --json . > "$ART/ast-grep.json"
+gitleaks detect --source . --report-format json --report-path "$ART/gitleaks.json" || true
+trufflehog filesystem --no-update --json --no-verification . > "$ART/trufflehog.json" || true
+trivy fs --format json --output "$ART/trivy-fs.json" .
+```
+
+If one tool is skipped or fails, record that in the shared wiki note along with the reason.
 
 ## Semgrep First Pass
 
 Use Semgrep as the default static triage pass:
 
 ```bash
-semgrep --config auto --json --output /workspace/.strix-source-aware/semgrep.json .
+# Preferred deterministic profile set (works with --metrics=off)
+semgrep scan --config p/default --config p/golang --config p/secrets \
+  --metrics=off --json --output /workspace/.strix-source-aware/semgrep.json .
+
+# If you choose auto config, do not combine it with --metrics=off
+semgrep scan --config auto --json --output /workspace/.strix-source-aware/semgrep-auto.json .
 ```
 
 If diff scope is active, restrict to changed files first, then expand only when needed.
@@ -91,6 +117,11 @@ Keep one wiki note per repository and update these sections:
 ## Static Findings Summary
 ## Dynamic Validation Follow-Ups
 ```
+
+Before `agent_finish`, make one final `update_note` call to capture:
+- scanner artifacts and paths
+- top validated/invalidated hypotheses
+- concrete dynamic follow-up tasks
 
 ## Anti-Patterns
 

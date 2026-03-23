@@ -78,6 +78,8 @@ def test_notes_jsonl_replay_survives_memory_reset(tmp_path: Path, monkeypatch) -
         assert listed["success"] is True
         assert listed["total_count"] == 1
         assert listed["notes"][0]["note_id"] == note_id
+        assert "content" not in listed["notes"][0]
+        assert "content_preview" in listed["notes"][0]
 
         updated = notes_actions.update_note(note_id=note_id, content="updated finding")
         assert updated["success"] is True
@@ -87,6 +89,15 @@ def test_notes_jsonl_replay_survives_memory_reset(tmp_path: Path, monkeypatch) -
         assert listed_after_update["success"] is True
         assert listed_after_update["total_count"] == 1
         assert listed_after_update["notes"][0]["note_id"] == note_id
+        assert listed_after_update["notes"][0]["content_preview"] == "updated finding"
+
+        listed_with_content = notes_actions.list_notes(
+            category="findings",
+            include_content=True,
+        )
+        assert listed_with_content["success"] is True
+        assert listed_with_content["total_count"] == 1
+        assert listed_with_content["notes"][0]["content"] == "updated finding"
 
         deleted = notes_actions.delete_note(note_id=note_id)
         assert deleted["success"] is True
@@ -95,6 +106,34 @@ def test_notes_jsonl_replay_survives_memory_reset(tmp_path: Path, monkeypatch) -
         listed_after_delete = notes_actions.list_notes(category="findings")
         assert listed_after_delete["success"] is True
         assert listed_after_delete["total_count"] == 0
+    finally:
+        _reset_notes_state()
+        set_global_tracer(previous_tracer)  # type: ignore[arg-type]
+
+
+def test_get_note_returns_full_note(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _reset_notes_state()
+
+    previous_tracer = get_global_tracer()
+    tracer = Tracer("get-note-run")
+    set_global_tracer(tracer)
+
+    try:
+        created = notes_actions.create_note(
+            title="Repo wiki",
+            content="entrypoints and sinks",
+            category="wiki",
+            tags=["repo:appsmith"],
+        )
+        assert created["success"] is True
+        note_id = created["note_id"]
+        assert isinstance(note_id, str)
+
+        result = notes_actions.get_note(note_id=note_id)
+        assert result["success"] is True
+        assert result["note"]["note_id"] == note_id
+        assert result["note"]["content"] == "entrypoints and sinks"
     finally:
         _reset_notes_state()
         set_global_tracer(previous_tracer)  # type: ignore[arg-type]
