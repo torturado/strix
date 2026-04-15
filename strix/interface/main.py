@@ -73,9 +73,9 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
     openai_session_token = Config.get("openai_session_token")
     openai_auth_type = Config.get("openai_auth_type")
 
-    if not llm_api_key and not openai_session_token and openai_auth_type != "oauth":
-        if not (Path.home() / ".codex" / "auth.json").exists():
-            missing_optional_vars.append("LLM_API_KEY / OPENAI_SESSION_TOKEN / OAUTH Session")
+    has_oauth_cache = openai_auth_type == "oauth" and (Path.home() / ".codex" / "auth.json").exists()
+    if not llm_api_key and not openai_session_token and not has_oauth_cache:
+        missing_optional_vars.append("LLM_API_KEY / OPENAI_SESSION_TOKEN / OPENAI_AUTH_TYPE")
 
     if not has_base_url:
         missing_optional_vars.append("LLM_API_BASE")
@@ -116,13 +116,20 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
             for var in missing_optional_vars:
                 if "LLM_API_KEY" in var:
                     error_text.append("• ", style="white")
-                    error_text.append("LLM_API_KEY / OPENAI_SESSION_TOKEN / STRIX_OPENAI_AUTH_TYPE", style="bold cyan")
                     error_text.append(
-                        " - API key or OpenAI subscription token (OAuth)\n",
+                        "LLM_API_KEY / OPENAI_SESSION_TOKEN / OPENAI_AUTH_TYPE",
+                        style="bold cyan",
+                    )
+                    error_text.append(
+                        " - API key for your model provider. OpenAI session tokens only work if they already include model.request.\n",
                         style="white",
                     )
                     error_text.append(
-                        "   To use your Plus/Pro subscription: export STRIX_OPENAI_AUTH_TYPE='oauth' and run 'codex login'\n",
+                        "   'codex login' tokens do not include model.request, so they cannot be used directly by Strix.\n",
+                        style="dim white",
+                    )
+                    error_text.append(
+                        "   If you want to reuse your ChatGPT/Codex session, run a local OpenAI-compatible proxy such as openai-oauth and point LLM_API_BASE to it.\n",
                         style="dim white",
                     )
                 elif var == "LLM_API_BASE":
@@ -155,7 +162,7 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
             for var in missing_optional_vars:
                 if "LLM_API_KEY" in var:
                     error_text.append(
-                        "export LLM_API_KEY='***'  # Or OPENAI_SESSION_TOKEN for subscriptions\n",
+                        "export LLM_API_KEY='***'  # recommended for OpenAI and other hosted providers\n",
                         style="dim white",
                     )
                 elif var == "LLM_API_BASE":
@@ -249,8 +256,17 @@ async def warm_up_llm() -> None:
         error_text.append("Please check your configuration and try again.\n", style="white")
         error_text.append(f"\nError: {e}", style="dim white")
 
-        if "401" in str(e) and (Config.get("openai_session_token") or (Path.home() / ".codex" / "auth.json").exists()):
+        if (
+            "401" in str(e)
+            and "model.request" not in str(e)
+            and (Config.get("openai_session_token") or (Path.home() / ".codex" / "auth.json").exists())
+        ):
             error_text.append("\n\nYour session token may be expired or invalid. Run 'codex login' to refresh.", style="bold yellow")
+        if "model.request" in str(e):
+            error_text.append(
+                "\n\nUse LLM_API_KEY with an OpenAI API key, or run a local Codex-compatible proxy such as openai-oauth and set LLM_API_BASE to that proxy.",
+                style="bold yellow",
+            )
 
         panel = Panel(
             error_text,

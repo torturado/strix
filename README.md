@@ -88,6 +88,19 @@ export LLM_API_KEY="your-api-key"
 strix --target ./app-directory
 ```
 
+If you want to reuse your local ChatGPT/Codex session instead of an API key, run an OpenAI-compatible local proxy such as [`openai-oauth`](https://github.com/EvanZhouDev/openai-oauth) and point Strix at it:
+
+```bash
+npx openai-oauth
+
+export STRIX_LLM="gpt-5.4"
+export LLM_API_BASE="http://127.0.0.1:10531/v1"
+unset LLM_API_KEY
+unset OPENAI_SESSION_TOKEN
+
+strix --target ./app-directory
+```
+
 > [!NOTE]
 > First run automatically pulls the sandbox Docker image. Results are saved to `strix_runs/<run-name>`
 
@@ -232,6 +245,15 @@ export LLM_API_KEY="your-api-key"
 export LLM_API_BASE="your-api-base-url"  # if using a local model, e.g. Ollama, LMStudio
 export PERPLEXITY_API_KEY="your-api-key"  # for search capabilities
 export STRIX_REASONING_EFFORT="high"  # control thinking effort (default: high, quick scan: medium)
+```
+
+For a local Codex-compatible proxy such as `openai-oauth`, prefer:
+
+```bash
+export STRIX_LLM="gpt-5.4"
+export LLM_API_BASE="http://127.0.0.1:10531/v1"
+unset LLM_API_KEY
+unset OPENAI_SESSION_TOKEN
 ```
 
 > [!NOTE]

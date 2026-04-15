@@ -1,8 +1,10 @@
 import contextlib
 import json
 import os
+from base64 import urlsafe_b64decode
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 STRIX_API_BASE = "https://models.strix.ai/api/v1"
@@ -10,6 +12,10 @@ STRIX_API_BASE = "https://models.strix.ai/api/v1"
 
 class Config:
     """Configuration Manager for Strix."""
+
+    _ENV_ALIASES = {
+        "openai_auth_type": ("STRIX_OPENAI_AUTH_TYPE",),
+    }
 
     # LLM Configuration
     strix_llm = None
@@ -90,7 +96,16 @@ class Config:
     def get(cls, name: str) -> str | None:
         env_name = name.upper()
         default = getattr(cls, name, None)
-        return os.getenv(env_name, default)
+        value = os.getenv(env_name)
+        if value is not None:
+            return value
+
+        for alias in cls._ENV_ALIASES.get(name, ()):
+            alias_value = os.getenv(alias)
+            if alias_value is not None:
+                return alias_value
+
+        return default
 
     @classmethod
     def config_dir(cls) -> Path:
@@ -214,6 +229,59 @@ def _get_codex_auth_data() -> dict[str, str | None]:
         return result
 
 
+def _decode_jwt_payload(token: str) -> dict[str, Any]:
+    """Decode a JWT payload without verifying the signature."""
+    if token.count(".") != 2:
+        return {}
+
+    try:
+        _, payload, _ = token.split(".")
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _get_openai_token_scopes(token: str | None) -> set[str]:
+    if not token:
+        return set()
+
+    payload = _decode_jwt_payload(token)
+    scopes = payload.get("scp") or payload.get("scope") or []
+
+    if isinstance(scopes, str):
+        return {scope for scope in scopes.split() if scope}
+    if isinstance(scopes, list):
+        return {str(scope) for scope in scopes if scope}
+    return set()
+
+
+def _validate_openai_session_token(token: str, source: str) -> None:
+    scopes = _get_openai_token_scopes(token)
+    if scopes and "model.request" not in scopes:
+        raise ValueError(
+            f"The OpenAI session token from {source} does not include the 'model.request' scope. "
+            "Codex login tokens cannot be used for LiteLLM/OpenAI API requests. "
+            "Set LLM_API_KEY to a real OpenAI API key instead, or use a local Codex-compatible proxy "
+            "such as openai-oauth via LLM_API_BASE."
+        )
+
+
+def _looks_like_openai_model(model: str) -> bool:
+    if "/" not in model:
+        return True
+    return model.startswith("openai/")
+
+
+def _is_local_openai_compatible_base(api_base: str | None, model: str) -> bool:
+    if not api_base or not _looks_like_openai_model(model):
+        return False
+
+    parsed = urlparse(api_base)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in {"127.0.0.1", "localhost", "::1"}
+
+
 def resolve_llm_config() -> tuple[str | None, str | None, str | None, dict[str, str]]:
     """Resolve LLM model, api_key, api_base and extra headers.
 
@@ -229,15 +297,21 @@ def resolve_llm_config() -> tuple[str | None, str | None, str | None, dict[str, 
         return None, None, None, {}
 
     api_key = Config.get("llm_api_key")
-    auth_type = Config.get("openai_auth_type")
+    auth_type = (Config.get("openai_auth_type") or "api_key").strip().lower()
+    session_token = Config.get("openai_session_token")
     extra_headers = {}
 
-    # Support for OpenAI subscription tokens (OAuth)
-    if auth_type == "oauth" or not api_key:
+    if not api_key and session_token:
+        _validate_openai_session_token(session_token, "OPENAI_SESSION_TOKEN")
+        api_key = session_token
+
+    # Explicit OAuth mode reads the Codex auth cache, but only if requested.
+    if auth_type == "oauth" and not api_key:
         auth_data = _get_codex_auth_data()
-        session_token = Config.get("openai_session_token") or auth_data["access_token"]
+        session_token = auth_data["access_token"]
 
         if session_token:
+            _validate_openai_session_token(session_token, "~/.codex/auth.json")
             api_key = session_token
             if auth_data["organization"]:
                 extra_headers["OpenAI-Organization"] = auth_data["organization"]
@@ -253,5 +327,10 @@ def resolve_llm_config() -> tuple[str | None, str | None, str | None, dict[str, 
             or Config.get("litellm_base_url")
             or Config.get("ollama_api_base")
         )
+
+    # LiteLLM's OpenAI path still constructs an OpenAI client that requires an api_key
+    # argument even when talking to a local OpenAI-compatible proxy that ignores auth.
+    if not api_key and _is_local_openai_compatible_base(api_base, model):
+        api_key = "strix-local-proxy"
 
     return model, api_key, api_base, extra_headers
