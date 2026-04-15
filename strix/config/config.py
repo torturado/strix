@@ -14,6 +14,7 @@ class Config:
     # LLM Configuration
     strix_llm = None
     llm_api_key = None
+    openai_session_token = None
     llm_api_base = None
     openai_api_base = None
     litellm_base_url = None
@@ -25,6 +26,7 @@ class Config:
     _LLM_CANONICAL_NAMES = (
         "strix_llm",
         "llm_api_key",
+        "openai_session_token",
         "llm_api_base",
         "openai_api_base",
         "litellm_base_url",
@@ -187,13 +189,30 @@ def save_current_config() -> bool:
     return Config.save_current()
 
 
+def _get_codex_auth_token() -> str | None:
+    """Try to read the access token from ~/.codex/auth.json."""
+    auth_path = Path.home() / ".codex" / "auth.json"
+    if not auth_path.exists():
+        return None
+    try:
+        with auth_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            # Try both flat and nested formats
+            token = data.get("access_token")
+            if not token and "tokens" in data:
+                token = data["tokens"].get("access_token")
+            return token
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def resolve_llm_config() -> tuple[str | None, str | None, str | None]:
     """Resolve LLM model, api_key, and api_base based on STRIX_LLM prefix.
 
     Returns:
         tuple: (model_name, api_key, api_base)
         - model_name: Original model name (strix/ prefix preserved for display)
-        - api_key: LLM API key
+        - api_key: LLM API key or session token
         - api_base: API base URL (auto-set to STRIX_API_BASE for strix/ models)
     """
     model = Config.get("strix_llm")
@@ -201,6 +220,10 @@ def resolve_llm_config() -> tuple[str | None, str | None, str | None]:
         return None, None, None
 
     api_key = Config.get("llm_api_key")
+
+    # Support for OpenAI subscription tokens
+    if not api_key:
+        api_key = Config.get("openai_session_token") or _get_codex_auth_token()
 
     if model.startswith("strix/"):
         api_base: str | None = STRIX_API_BASE

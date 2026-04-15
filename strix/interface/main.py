@@ -69,8 +69,11 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
         ]
     )
 
-    if not Config.get("llm_api_key"):
-        missing_optional_vars.append("LLM_API_KEY")
+    llm_api_key = Config.get("llm_api_key")
+    openai_session_token = Config.get("openai_session_token")
+
+    if not llm_api_key and not openai_session_token:
+        missing_optional_vars.append("LLM_API_KEY / OPENAI_SESSION_TOKEN")
 
     if not has_base_url:
         missing_optional_vars.append("LLM_API_BASE")
@@ -109,11 +112,11 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
         if missing_optional_vars:
             error_text.append("\nOptional environment variables:\n", style="white")
             for var in missing_optional_vars:
-                if var == "LLM_API_KEY":
+                if "LLM_API_KEY" in var:
                     error_text.append("• ", style="white")
-                    error_text.append("LLM_API_KEY", style="bold cyan")
+                    error_text.append("LLM_API_KEY / OPENAI_SESSION_TOKEN", style="bold cyan")
                     error_text.append(
-                        " - API key for the LLM provider "
+                        " - API key or OpenAI subscription token "
                         "(not needed for local models, Vertex AI, AWS, etc.)\n",
                         style="white",
                     )
@@ -145,10 +148,9 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
 
         if missing_optional_vars:
             for var in missing_optional_vars:
-                if var == "LLM_API_KEY":
+                if "LLM_API_KEY" in var:
                     error_text.append(
-                        "export LLM_API_KEY='your-api-key-here'  "
-                        "# not needed for local models, Vertex AI, AWS, etc.\n",
+                        "export LLM_API_KEY='***'  # Or OPENAI_SESSION_TOKEN for subscriptions\n",
                         style="dim white",
                     )
                 elif var == "LLM_API_BASE":
@@ -239,6 +241,9 @@ async def warm_up_llm() -> None:
         error_text.append("Could not establish connection to the language model.\n", style="white")
         error_text.append("Please check your configuration and try again.\n", style="white")
         error_text.append(f"\nError: {e}", style="dim white")
+
+        if "401" in str(e) and (Config.get("openai_session_token") or (Path.home() / ".codex" / "auth.json").exists()):
+            error_text.append("\n\nYour session token may be expired or invalid. Run 'codex login' to refresh.", style="bold yellow")
 
         panel = Panel(
             error_text,
