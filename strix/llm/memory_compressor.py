@@ -104,7 +104,7 @@ def _summarize_messages(
     conversation = "\n".join(formatted)
     prompt = SUMMARY_PROMPT_TEMPLATE.format(conversation=conversation)
 
-    _, api_key, api_base = resolve_llm_config()
+    _, api_key, api_base, _ = resolve_llm_config()
 
     try:
         completion_args: dict[str, Any] = {

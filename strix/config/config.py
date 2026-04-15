@@ -189,41 +189,55 @@ def save_current_config() -> bool:
     return Config.save_current()
 
 
-def _get_codex_auth_token() -> str | None:
-    """Try to read the access token from ~/.codex/auth.json."""
+def _get_codex_auth_data() -> dict[str, str | None]:
+    """Try to read the auth data from ~/.codex/auth.json."""
     auth_path = Path.home() / ".codex" / "auth.json"
+    result = {"access_token": None, "organization": None, "project": None}
     if not auth_path.exists():
-        return None
+        return result
     try:
         with auth_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-            # Try both flat and nested formats
+            # Access Token
             token = data.get("access_token")
             if not token and "tokens" in data:
                 token = data["tokens"].get("access_token")
-            return token
+            result["access_token"] = token
+
+            # Organization and Project IDs (often needed for subscription scopes)
+            result["organization"] = data.get("organization_id") or data.get("org_id")
+            result["project"] = data.get("project_id")
+            return result
     except (json.JSONDecodeError, OSError):
-        return None
+        return result
 
 
-def resolve_llm_config() -> tuple[str | None, str | None, str | None]:
-    """Resolve LLM model, api_key, and api_base based on STRIX_LLM prefix.
+def resolve_llm_config() -> tuple[str | None, str | None, str | None, dict[str, str]]:
+    """Resolve LLM model, api_key, api_base and extra headers.
 
     Returns:
-        tuple: (model_name, api_key, api_base)
+        tuple: (model_name, api_key, api_base, extra_headers)
         - model_name: Original model name (strix/ prefix preserved for display)
         - api_key: LLM API key or session token
         - api_base: API base URL (auto-set to STRIX_API_BASE for strix/ models)
+        - extra_headers: Additional HTTP headers (e.g., OpenAI-Project)
     """
     model = Config.get("strix_llm")
     if not model:
-        return None, None, None
+        return None, None, None, {}
 
     api_key = Config.get("llm_api_key")
+    extra_headers = {}
 
     # Support for OpenAI subscription tokens
     if not api_key:
-        api_key = Config.get("openai_session_token") or _get_codex_auth_token()
+        auth_data = _get_codex_auth_data()
+        api_key = Config.get("openai_session_token") or auth_data["access_token"]
+
+        if auth_data["organization"]:
+            extra_headers["OpenAI-Organization"] = auth_data["organization"]
+        if auth_data["project"]:
+            extra_headers["OpenAI-Project"] = auth_data["project"]
 
     if model.startswith("strix/"):
         api_base: str | None = STRIX_API_BASE
@@ -235,4 +249,4 @@ def resolve_llm_config() -> tuple[str | None, str | None, str | None]:
             or Config.get("ollama_api_base")
         )
 
-    return model, api_key, api_base
+    return model, api_key, api_base, extra_headers

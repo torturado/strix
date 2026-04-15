@@ -209,7 +209,7 @@ async def warm_up_llm() -> None:
     console = Console()
 
     try:
-        model_name, api_key, api_base = resolve_llm_config()
+        model_name, api_key, api_base, extra_headers = resolve_llm_config()
         litellm_model, _ = resolve_strix_model(model_name)
         litellm_model = litellm_model or model_name
 
@@ -229,6 +229,8 @@ async def warm_up_llm() -> None:
             completion_kwargs["api_key"] = api_key
         if api_base:
             completion_kwargs["api_base"] = api_base
+        if extra_headers:
+            completion_kwargs["extra_headers"] = extra_headers
 
         response = litellm.completion(**completion_kwargs)
 
