@@ -71,9 +71,11 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
 
     llm_api_key = Config.get("llm_api_key")
     openai_session_token = Config.get("openai_session_token")
+    openai_auth_type = Config.get("openai_auth_type")
 
-    if not llm_api_key and not openai_session_token:
-        missing_optional_vars.append("LLM_API_KEY / OPENAI_SESSION_TOKEN")
+    if not llm_api_key and not openai_session_token and openai_auth_type != "oauth":
+        if not (Path.home() / ".codex" / "auth.json").exists():
+            missing_optional_vars.append("LLM_API_KEY / OPENAI_SESSION_TOKEN / OAUTH Session")
 
     if not has_base_url:
         missing_optional_vars.append("LLM_API_BASE")
@@ -114,11 +116,14 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
             for var in missing_optional_vars:
                 if "LLM_API_KEY" in var:
                     error_text.append("• ", style="white")
-                    error_text.append("LLM_API_KEY / OPENAI_SESSION_TOKEN", style="bold cyan")
+                    error_text.append("LLM_API_KEY / OPENAI_SESSION_TOKEN / STRIX_OPENAI_AUTH_TYPE", style="bold cyan")
                     error_text.append(
-                        " - API key or OpenAI subscription token "
-                        "(not needed for local models, Vertex AI, AWS, etc.)\n",
+                        " - API key or OpenAI subscription token (OAuth)\n",
                         style="white",
+                    )
+                    error_text.append(
+                        "   To use your Plus/Pro subscription: export STRIX_OPENAI_AUTH_TYPE='oauth' and run 'codex login'\n",
+                        style="dim white",
                     )
                 elif var == "LLM_API_BASE":
                     error_text.append("• ", style="white")

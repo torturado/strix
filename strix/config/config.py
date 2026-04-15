@@ -15,6 +15,7 @@ class Config:
     strix_llm = None
     llm_api_key = None
     openai_session_token = None
+    openai_auth_type = "api_key"
     llm_api_base = None
     openai_api_base = None
     litellm_base_url = None
@@ -27,6 +28,7 @@ class Config:
         "strix_llm",
         "llm_api_key",
         "openai_session_token",
+        "openai_auth_type",
         "llm_api_base",
         "openai_api_base",
         "litellm_base_url",
@@ -227,17 +229,20 @@ def resolve_llm_config() -> tuple[str | None, str | None, str | None, dict[str, 
         return None, None, None, {}
 
     api_key = Config.get("llm_api_key")
+    auth_type = Config.get("openai_auth_type")
     extra_headers = {}
 
-    # Support for OpenAI subscription tokens
-    if not api_key:
+    # Support for OpenAI subscription tokens (OAuth)
+    if auth_type == "oauth" or not api_key:
         auth_data = _get_codex_auth_data()
-        api_key = Config.get("openai_session_token") or auth_data["access_token"]
+        session_token = Config.get("openai_session_token") or auth_data["access_token"]
 
-        if auth_data["organization"]:
-            extra_headers["OpenAI-Organization"] = auth_data["organization"]
-        if auth_data["project"]:
-            extra_headers["OpenAI-Project"] = auth_data["project"]
+        if session_token:
+            api_key = session_token
+            if auth_data["organization"]:
+                extra_headers["OpenAI-Organization"] = auth_data["organization"]
+            if auth_data["project"]:
+                extra_headers["OpenAI-Project"] = auth_data["project"]
 
     if model.startswith("strix/"):
         api_base: str | None = STRIX_API_BASE
